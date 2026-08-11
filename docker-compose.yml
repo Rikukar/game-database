@@ -1,0 +1,31 @@
+# Local Postgres for development.
+#
+#   docker compose up -d
+#   npm run db:setup
+#
+# Matches the DATABASE_URL in .env.example. Production is Neon, which runs the
+# same major version.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: game-database-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: game_database
+    ports:
+      # 5433 on the host: 5432 is often already taken by a locally installed
+      # PostgreSQL, and the collision fails as an auth error rather than
+      # anything that points at the real cause.
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U user -d game_database']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
