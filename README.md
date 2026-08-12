@@ -29,10 +29,31 @@ npm run dev
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:setup` | Create extensions, then migrate |
 | `npm run db:studio` | Browse the database in Drizzle Studio |
+| `npm run ingest` | Pull data from IGDB |
+
+## Ingest
+
+IGDB authenticates through Twitch, so you need a client ID and secret from
+[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) in `.env.local`.
+
+```bash
+npm run ingest -- --limit 2   # two pages per stage, to check it works
+npm run ingest                # full run, about 15 minutes
+```
+
+Every write is an upsert keyed on IGDB's id, so re-running is safe. Progress is
+checkpointed per stage, and an interrupted run resumes where it stopped. Use
+`--fresh` to ignore checkpoints and start over.
+
+By default it pulls games with a cover that are either rated or anticipated —
+about 46,000 of IGDB's 372,000 entries, which skips the coverless stubs without
+losing anything people search for. Override with `IGDB_GAME_FILTER` in
+`.env.local`; `cover != null` alone gives roughly 313,000.
 
 ## Layout
 
 - `src/db/schema.ts` — the schema, and what migrations are generated from
+- `src/ingest/` — the IGDB client and ingest pipeline
 - `db/migrations/` — generated SQL migrations
 - `db/schema.sql` — annotated design notes
 - `db/queries.sql` — the main search and recommendation queries

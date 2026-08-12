@@ -34,3 +34,9 @@ if (process.env.NODE_ENV !== 'production') {
 
 export const db = drizzle(client, { schema })
 export { schema }
+
+/**
+ * Closes the pool so a CLI script can exit. Never call this from the app —
+ * Next.js reuses the module across requests.
+ */
+export const closeDb = () => client.end()

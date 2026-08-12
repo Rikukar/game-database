@@ -70,7 +70,8 @@ CREATE TABLE companies (
   igdb_id      integer NOT NULL UNIQUE,
   slug         text    NOT NULL UNIQUE,
   name         text    NOT NULL,
-  country      char(2),         -- ISO 3166-1 alpha-2
+  -- ISO 3166-1 *numeric*, which is what IGDB returns (826, not "GB").
+  country      smallint,
   founded_at   date,
   description  text
 );
@@ -131,6 +132,10 @@ CREATE TABLE games (
   critic_rating      real,
 
   search_extra       text     NOT NULL DEFAULT '',
+  -- Regional and alternate titles ("Biohazard" for Resident Evil). Stored so
+  -- search_extra can be rebuilt entirely in SQL after ingest, rather than
+  -- depending on what happened to be in memory at insert time.
+  alternative_names  text[]   NOT NULL DEFAULT '{}',
   genre_ids          smallint[] NOT NULL DEFAULT '{}',
   platform_ids       smallint[] NOT NULL DEFAULT '{}',
 
@@ -316,6 +321,23 @@ CREATE TABLE price_history (
   price_cents integer     NOT NULL CHECK (price_cents >= 0),
   discount_pct smallint   CHECK (discount_pct BETWEEN 0 AND 100),
   PRIMARY KEY (game_id, store, currency, recorded_at)
+);
+
+
+-- ---------------------------------------------------------------------------
+-- Ingest bookkeeping
+--
+-- The IGDB sweep is keyset-paginated by id, so recording the last id seen per
+-- stage makes a crashed run resumable without re-walking ~1,500 API pages. The
+-- upserts are idempotent regardless — this only saves time, never correctness.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE ingest_checkpoints (
+  stage        text PRIMARY KEY,
+  last_igdb_id integer NOT NULL DEFAULT 0,
+  processed    integer NOT NULL DEFAULT 0,
+  completed_at timestamptz,
+  updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
 

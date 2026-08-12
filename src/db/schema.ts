@@ -12,7 +12,6 @@
 import { sql } from 'drizzle-orm'
 import {
   type AnyPgColumn,
-  char,
   check,
   customType,
   date,
@@ -107,8 +106,12 @@ export const companies = pgTable(
     igdbId: integer('igdb_id').notNull().unique(),
     slug: text('slug').notNull().unique(),
     name: text('name').notNull(),
-    /** ISO 3166-1 alpha-2. */
-    country: char('country', { length: 2 }),
+    /**
+     * ISO 3166-1 *numeric*, which is what IGDB returns (826, not "GB").
+     * Rendering the name is a client-side lookup rather than 250 rows of
+     * reference table nobody queries.
+     */
+    country: smallint('country'),
     foundedAt: date('founded_at'),
     description: text('description'),
   },
@@ -174,6 +177,13 @@ export const games = pgTable(
      * single-table index scan.
      */
     searchExtra: text('search_extra').notNull().default(''),
+
+    /**
+     * Regional and alternate titles ("Biohazard" for Resident Evil). Stored so
+     * searchExtra can be recomputed entirely in SQL after ingest instead of
+     * depending on what happened to be in memory at insert time.
+     */
+    alternativeNames: text('alternative_names').array().notNull().default([]),
 
     /**
      * These duplicate the junction tables below. The junctions are the source
@@ -472,6 +482,23 @@ export const gameSimilarity = pgTable(
     check('similarity_not_self', sql`${t.gameId} <> ${t.similarGameId}`),
   ],
 )
+
+/**
+ * Ingest progress, one row per stage.
+ *
+ * The IGDB sweep is keyset-paginated by id, so recording the last id seen makes
+ * a crashed run resumable without re-walking ~1,500 API pages. The upserts are
+ * idempotent regardless — this only saves time, never correctness.
+ */
+export const ingestCheckpoints = pgTable('ingest_checkpoints', {
+  stage: text('stage').primaryKey(),
+  lastIgdbId: integer('last_igdb_id').notNull().default(0),
+  processed: integer('processed').notNull().default(0),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+})
 
 export type Game = typeof games.$inferSelect
 export type NewGame = typeof games.$inferInsert
