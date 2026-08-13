@@ -1,0 +1,2 @@
+ALTER TABLE "games" ADD COLUMN "weighted_rating" real;--> statement-breakpoint
+CREATE INDEX "games_browse_idx" ON "games" USING btree ("weighted_rating" DESC NULLS LAST) WHERE "games"."category" = 'main_game';

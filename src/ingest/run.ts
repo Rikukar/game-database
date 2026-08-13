@@ -8,6 +8,7 @@ import {
   franchises,
   gameCategory,
   gameCompanies,
+  gameStatus,
   gameGenres,
   gameKeywords,
   gamePlatforms,
@@ -97,8 +98,11 @@ type IgdbGame = Named & {
   rating?: number
   rating_count?: number
   aggregated_rating?: number
+  total_rating?: number
+  total_rating_count?: number
   cover?: { image_id?: string }
   game_type?: { type?: string }
+  game_status?: { status?: string }
   parent_game?: number
   franchise?: number
   genres?: number[]
@@ -185,6 +189,21 @@ const GAME_TYPES: Record<string, GameCategory> = {
 function toGameCategory(type?: string): GameCategory {
   if (!type) return 'main_game'
   return GAME_TYPES[type.toLowerCase()] ?? 'main_game'
+}
+
+type GameStatus = (typeof gameStatus.enumValues)[number]
+
+/**
+ * IGDB leaves game_status unset on the overwhelming majority of records, so
+ * null here means "released as far as anyone knows" rather than "unknown".
+ */
+function toGameStatus(status?: string): GameStatus | null {
+  if (!status) return null
+
+  const normalised = status.toLowerCase().replace(/[^a-z]+/g, '_')
+  return (gameStatus.enumValues as readonly string[]).includes(normalised)
+    ? (normalised as GameStatus)
+    : null
 }
 
 /** IGDB date formats: YYYYMMMMDD, YYYYMMMM, YYYY, YYYYQ1..Q4, TBD. */
@@ -448,7 +467,8 @@ async function syncGames() {
       where: GAME_FILTER,
       fields:
         'name,slug,summary,storyline,first_release_date,rating,rating_count,' +
-        'aggregated_rating,cover.image_id,game_type.type,parent_game,franchise,' +
+        'aggregated_rating,total_rating,total_rating_count,cover.image_id,' +
+        'game_type.type,game_status.status,parent_game,franchise,' +
         'genres,platforms,keywords,alternative_names.name',
     },
     async (page) => {
@@ -459,6 +479,7 @@ async function syncGames() {
         slug: row.slug ?? slugify(row.name ?? `game-${row.id}`),
         name: row.name ?? 'Unknown',
         category: toGameCategory(row.game_type?.type),
+        status: toGameStatus(row.game_status?.status),
         franchiseId: row.franchise ? (franchiseIds.get(row.franchise) ?? null) : null,
         summary: row.summary ?? null,
         storyline: row.storyline ?? null,
@@ -467,6 +488,8 @@ async function syncGames() {
         igdbRating: row.rating ?? null,
         igdbRatingCount: row.rating_count ?? 0,
         criticRating: row.aggregated_rating ?? null,
+        totalRating: row.total_rating ?? null,
+        totalRatingCount: row.total_rating_count ?? 0,
         alternativeNames:
           row.alternative_names
             ?.map((alt) => alt.name)
@@ -482,6 +505,7 @@ async function syncGames() {
             slug: sql`excluded.slug`,
             name: sql`excluded.name`,
             category: sql`excluded.category`,
+            status: sql`excluded.status`,
             franchiseId: sql`excluded.franchise_id`,
             summary: sql`excluded.summary`,
             storyline: sql`excluded.storyline`,
@@ -490,6 +514,8 @@ async function syncGames() {
             igdbRating: sql`excluded.igdb_rating`,
             igdbRatingCount: sql`excluded.igdb_rating_count`,
             criticRating: sql`excluded.critic_rating`,
+            totalRating: sql`excluded.total_rating`,
+            totalRatingCount: sql`excluded.total_rating_count`,
             alternativeNames: sql`excluded.alternative_names`,
             updatedAt: new Date(),
           },
@@ -735,6 +761,33 @@ async function finalize() {
                 WHERE gc.game_id = g.id
                   AND gc.role IN ('developer', 'publisher')), ''),
       '\\s+', ' ', 'g'))
+  `)
+
+  /**
+   * Bayesian average: pull each game's rating toward the global mean in
+   * proportion to how few votes it has.
+   *
+   *   weighted = (v / (v + m)) * R  +  (m / (v + m)) * C
+   *
+   * where R is the game's rating, v its vote count, C the global mean, and m
+   * the prior weight — the number of votes at which a game is trusted as much
+   * as it is doubted. At m = 100, a 99 from 85 votes lands near 91 while a 94
+   * from 5,404 barely moves, which is the whole point.
+   *
+   * C is computed over games with at least 10 votes so that the mean itself
+   * isn't dragged around by the noise it exists to correct.
+   */
+  await db.execute(sql`
+    WITH stats AS (
+      SELECT avg(total_rating) AS mean
+      FROM games
+      WHERE total_rating IS NOT NULL AND total_rating_count >= 10
+    )
+    UPDATE games g SET weighted_rating =
+      (g.total_rating_count::real / (g.total_rating_count + 100)) * g.total_rating
+      + (100.0 / (g.total_rating_count + 100)) * stats.mean
+    FROM stats
+    WHERE g.total_rating IS NOT NULL
   `)
 
   // The planner has no statistics for 70k freshly inserted rows until this runs,

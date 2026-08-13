@@ -15,6 +15,20 @@
       "when": 1786512569743,
       "tag": "0001_adorable_bloodstorm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786600041556,
+      "tag": "0002_spotty_luke_cage",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786600875737,
+      "tag": "0003_oval_kronos",
+      "breakpoints": true
     }
   ]
 }

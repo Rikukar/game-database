@@ -32,6 +32,15 @@ CREATE TYPE game_category AS ENUM (
   'remake', 'remaster', 'port', 'episode', 'season', 'mod'
 );
 
+-- IGDB only sets a status when it isn't the obvious one, so most released
+-- games carry no status at all — NULL means "released, as far as anyone knows".
+-- Without this, a rumoured entry like "Bloodborne 2" is indistinguishable from
+-- a game that actually shipped.
+CREATE TYPE game_status AS ENUM (
+  'released', 'alpha', 'beta', 'early_access',
+  'offline', 'cancelled', 'rumored', 'delisted'
+);
+
 CREATE TYPE company_role AS ENUM ('developer', 'publisher', 'porting', 'supporting');
 
 CREATE TYPE library_status AS ENUM ('wishlist', 'backlog', 'playing', 'completed', 'dropped');
@@ -127,9 +136,21 @@ CREATE TABLE games (
   cover_url          text,
   first_release_date date,
 
-  igdb_rating        real,
+  status             game_status,
+
+  igdb_rating        real,      -- users only
   igdb_rating_count  integer NOT NULL DEFAULT 0,
-  critic_rating      real,
+  critic_rating      real,      -- critic aggregate only
+  -- Users and critics combined. This is what the ingest filter selects on, so
+  -- it's the pair that explains why a game is in the database at all; showing
+  -- the user-only count left 21,540 games reading "0 ratings" despite
+  -- qualifying on critic scores.
+  total_rating       real,
+  total_rating_count integer NOT NULL DEFAULT 0,
+  -- Bayesian average of total_rating, pulled toward the global mean in
+  -- proportion to how few votes a game has. Needs a global constant, so it
+  -- can't be a generated column — the ingest recomputes it during finalize.
+  weighted_rating    real,
 
   search_extra       text     NOT NULL DEFAULT '',
   -- Regional and alternate titles ("Biohazard" for Resident Evil). Stored so
@@ -178,6 +199,12 @@ CREATE INDEX games_release_idx     ON games (first_release_date DESC NULLS LAST)
 -- full index and it never goes stale for this query shape.
 CREATE INDEX games_top_rated_idx   ON games (igdb_rating DESC)
   WHERE igdb_rating_count >= 50;
+
+-- Serves the browse view, which is always base games by weighted rating.
+-- Partial on category so it stores ~22k rows rather than 46k, and the ordering
+-- lives in the index so the query does no sort at all.
+CREATE INDEX games_browse_idx      ON games (weighted_rating DESC NULLS LAST)
+  WHERE category = 'main_game';
 
 CREATE INDEX games_parent_idx      ON games (parent_game_id) WHERE parent_game_id IS NOT NULL;
 CREATE INDEX games_franchise_idx   ON games (franchise_id)   WHERE franchise_id IS NOT NULL;

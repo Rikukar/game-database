@@ -55,6 +55,25 @@ export const gameCategory = pgEnum('game_category', [
   'mod',
 ])
 
+/**
+ * IGDB only sets a status when it isn't the obvious one, so most released
+ * games carry no status at all — the column is nullable and null means
+ * "released, as far as anyone knows".
+ *
+ * Worth storing because without it a rumour like "Bloodborne 2" is
+ * indistinguishable from a real game.
+ */
+export const gameStatus = pgEnum('game_status', [
+  'released',
+  'alpha',
+  'beta',
+  'early_access',
+  'offline',
+  'cancelled',
+  'rumored',
+  'delisted',
+])
+
 export const companyRole = pgEnum('company_role', [
   'developer',
   'publisher',
@@ -165,9 +184,34 @@ export const games = pgTable(
     /** Denormalized convenience column; release_dates holds the real answer. */
     firstReleaseDate: date('first_release_date'),
 
+    status: gameStatus('status'),
+
+    /** User ratings only. */
     igdbRating: real('igdb_rating'),
     igdbRatingCount: integer('igdb_rating_count').notNull().default(0),
+    /** Critic aggregate only. */
     criticRating: real('critic_rating'),
+
+    /**
+     * Users and critics combined — what the ingest filter selects on, so this
+     * is the pair that actually explains why a game is in the database. Using
+     * the user-only count for display meant 21,540 games showed "0 ratings"
+     * despite qualifying on critic scores alone.
+     */
+    totalRating: real('total_rating'),
+    totalRatingCount: integer('total_rating_count').notNull().default(0),
+
+    /**
+     * Bayesian average of totalRating, pulled toward the global mean in
+     * proportion to how few votes a game has.
+     *
+     * Sorting on the raw rating puts "Grand Theft Auto V: Special Edition"
+     * (99 from 85 votes) above The Witcher 3 (94 from 5,404) — the top of the
+     * list fills with obscure entries that a handful of people loved. This
+     * needs a global constant to compute, so it can't be a generated column;
+     * the ingest recomputes it during finalize.
+     */
+    weightedRating: real('weighted_rating'),
 
     /**
      * Denormalized bag of searchable text assembled at ingest: alternative
@@ -244,6 +288,15 @@ export const games = pgTable(
     index('games_top_rated_idx')
       .on(sql`${t.igdbRating} DESC`)
       .where(sql`${t.igdbRatingCount} >= 50`),
+
+    /**
+     * Serves the browse view, which is always base games ordered by weighted
+     * rating. Partial on category so it stores ~26k rows rather than 46k, and
+     * the ordering lives in the index so there is no sort at all.
+     */
+    index('games_browse_idx')
+      .on(sql`${t.weightedRating} DESC NULLS LAST`)
+      .where(sql`${t.category} = 'main_game'`),
 
     index('games_parent_idx')
       .on(t.parentGameId)

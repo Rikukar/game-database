@@ -50,6 +50,18 @@ about 46,000 of IGDB's 372,000 entries, which skips the coverless stubs without
 losing anything people search for. Override with `IGDB_GAME_FILTER` in
 `.env.local`; `cover != null` alone gives roughly 313,000.
 
+## Notes on the data
+
+IGDB is a database, not a storefront — it tracks mods, cancelled projects,
+betas and rumoured sequels alongside released games. "Bloodborne 2" is a real
+IGDB record flagged `Rumored`; "Grand Theft Auto: Brasil" is a real mod. Both
+are kept and labelled rather than filtered out, since a cancelled game is often
+the interesting one.
+
+Browse only shows released base games ordered by a Bayesian weighted rating, so
+a 100/100 from five votes doesn't outrank a 94 from five thousand. Search covers
+everything, with a badge on anything that isn't a plain released game.
+
 ## Layout
 
 - `src/db/schema.ts` — the schema, and what migrations are generated from

@@ -22,17 +22,33 @@
 -- 0.14, under the 0.3 default, i.e. no match at all. word_similarity compares
 -- the query against the best-matching word sequence inside the title instead,
 -- and scores the same pair at 0.67. Both operators use the same GIN index.
+--
+-- NOTE: the query is parsed with BOTH dictionaries and OR'd. Titles are indexed
+-- with 'simple' and summaries with 'english', so parsing the query only as
+-- 'english' silently fails against any title the stemmer alters — "bloodborne"
+-- becomes the lexeme 'bloodborn', which never matches the 'bloodborne' token in
+-- the title. Bloodborne was unfindable by name; only its editions ranked,
+-- because their English-stemmed summaries happen to mention it.
 -- ---------------------------------------------------------------------------
 
 WITH q AS (
   SELECT
-    websearch_to_tsquery('english', $1) AS tsq,
-    $1::text                            AS raw
+    websearch_to_tsquery('simple',  $1)
+    || websearch_to_tsquery('english', $1) AS tsq,
+    $1::text                               AS raw
 ),
 fts AS (
+  -- The CASE is what makes "search for X returns X" a property of the query
+  -- rather than a coincidence. ts_rank sums term frequencies, so an edition
+  -- that repeats the name across its alternate titles outranks the game itself.
   SELECT
     g.id,
-    ts_rank(g.search_vector, q.tsq) * 10 AS score
+    ts_rank(g.search_vector, q.tsq) * 10
+    + CASE
+        WHEN lower(g.name) = lower(q.raw)               THEN 100
+        WHEN lower(g.name) LIKE lower(q.raw) || '%'     THEN 50
+        ELSE 0
+      END AS score
   FROM games g, q
   WHERE g.search_vector @@ q.tsq          -- games_search_idx (GIN)
 ),

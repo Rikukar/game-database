@@ -1,69 +1,143 @@
-import Image from "next/image";
+import Link from 'next/link'
+import { Suspense } from 'react'
 
-export default function Home() {
+import {
+  PAGE_SIZE,
+  listGenres,
+  listPlatforms,
+  parseIds,
+  searchGames,
+} from '@/lib/search'
+
+import { FacetList } from './_components/facet-list'
+import { GameCard } from './_components/game-card'
+import { SearchField } from './_components/search-field'
+
+type PageSearchParams = { [key: string]: string | string[] | undefined }
+
+const first = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : value
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<PageSearchParams>
+}) {
+  const params = await searchParams
+
+  const query = (first(params.q) ?? '').trim()
+  const genreIds = parseIds(params.genre)
+  const platformIds = parseIds(params.platform)
+  const page = Math.max(1, Number.parseInt(first(params.page) ?? '1', 10) || 1)
+
+  const [{ results, total }, genres, platforms] = await Promise.all([
+    searchGames({ query, genreIds, platformIds, page }),
+    listGenres(),
+    listPlatforms(),
+  ])
+
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // Rebuilt rather than passed through, so facet links can't inherit a stale page.
+  const currentParams = new URLSearchParams()
+  if (query) currentParams.set('q', query)
+  if (genreIds.length) currentParams.set('genre', genreIds.join(','))
+  if (platformIds.length) currentParams.set('platform', platformIds.join(','))
+
+  const pageHref = (target: number) => {
+    const next = new URLSearchParams(currentParams)
+    if (target > 1) next.set('page', String(target))
+    const search = next.toString()
+    return search ? `/?${search}` : '/'
+  }
+
+  const hasFilters = genreIds.length > 0 || platformIds.length > 0
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 lg:py-12">
+      <header className="mb-8">
+        <h1 className="mb-1 text-2xl font-semibold tracking-tight">Game Database</h1>
+        <p className="mb-6 text-sm opacity-60">
+          Full-text and fuzzy search across {(46271).toLocaleString('en-US')} games
+          from IGDB.
+        </p>
+
+        <Suspense fallback={<div className="h-[50px] rounded-lg bg-black/5 dark:bg-white/5" />}>
+          <SearchField initialQuery={query} />
+        </Suspense>
+      </header>
+
+      <div className="lg:grid lg:grid-cols-[13rem_1fr] lg:gap-10">
+        <aside className="mb-8 space-y-6 lg:mb-0">
+          {hasFilters && (
+            <Link href={query ? `/?q=${encodeURIComponent(query)}` : '/'} className="text-sm underline opacity-60 hover:opacity-100">
+              Clear filters
+            </Link>
+          )}
+          <FacetList
+            title="Genre"
+            param="genre"
+            options={genres}
+            selected={genreIds}
+            searchParams={currentParams}
+          />
+          <FacetList
+            title="Platform"
+            param="platform"
+            options={platforms}
+            selected={platformIds}
+            searchParams={currentParams}
+          />
+        </aside>
+
+        <main>
+          <p className="mb-4 text-sm opacity-60" aria-live="polite">
+            {total === 0
+              ? 'No games found'
+              : `${total.toLocaleString('en-US')} ${total === 1 ? 'game' : 'games'}`}
+            {query && total > 0 && <> matching “{query}”</>}
+            {!query && !hasFilters && total > 0 && <> — highest rated</>}
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+
+          {results.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-black/10 p-8 text-center text-sm opacity-60 dark:border-white/15">
+              Nothing here. Try a different search or clear the filters.
+            </p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+              {results.map((game) => (
+                <li key={game.id}>
+                  <GameCard game={game} />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {lastPage > 1 && (
+            <nav className="mt-10 flex items-center justify-between text-sm">
+              {page > 1 ? (
+                <Link href={pageHref(page - 1)} className="underline hover:opacity-70">
+                  ← Previous
+                </Link>
+              ) : (
+                <span className="opacity-30">← Previous</span>
+              )}
+
+              <span className="opacity-60 tabular-nums">
+                Page {page.toLocaleString('en-US')} of {lastPage.toLocaleString('en-US')}
+              </span>
+
+              {page < lastPage ? (
+                <Link href={pageHref(page + 1)} className="underline hover:opacity-70">
+                  Next →
+                </Link>
+              ) : (
+                <span className="opacity-30">Next →</span>
+              )}
+            </nav>
+          )}
+        </main>
+      </div>
     </div>
-  );
+  )
 }
