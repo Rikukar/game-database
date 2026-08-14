@@ -10,7 +10,9 @@ Next.js, TypeScript, PostgreSQL, Drizzle ORM, Tailwind CSS.
 
 ## Setup
 
-Requires Node 22+ and Docker.
+Requires Node 22+ and Docker. Local development runs PostgreSQL 17 via
+docker-compose; production is Neon on 18. Anything from 15 up works — the
+schema relies on generated columns, `pg_trgm` and partial indexes.
 
 ```bash
 npm install
@@ -49,6 +51,35 @@ By default it pulls games with a cover that are either rated or anticipated —
 about 46,000 of IGDB's 372,000 entries, which skips the coverless stubs without
 losing anything people search for. Override with `IGDB_GAME_FILTER` in
 `.env.local`; `cover != null` alone gives roughly 313,000.
+
+## Deploying
+
+Neon for the database, Vercel for the app.
+
+**1. Create a Neon project.** Copy both connection strings — the pooled one
+(host contains `-pooler`) and the direct one.
+
+**2. Point a local `.env.production` at it** and set up the schema. Migrations
+and the ingest need the direct endpoint; pgbouncer's transaction pooling can't
+run DDL or hold a transaction open for a multi-minute ingest.
+
+```bash
+DATABASE_URL="<pooled>" DATABASE_URL_UNPOOLED="<direct>" npm run db:setup
+DATABASE_URL="<pooled>" DATABASE_URL_UNPOOLED="<direct>" npm run ingest
+```
+
+The ingest takes about 11 minutes and is resumable, so a dropped connection
+isn't a restart.
+
+**3. Deploy to Vercel** and set the environment variables: `DATABASE_URL`
+(pooled), `DATABASE_URL_UNPOOLED` (direct), `IGDB_CLIENT_ID`,
+`IGDB_CLIENT_SECRET`. Neon's Vercel integration sets the first two for you
+under exactly these names.
+
+Two things to expect on the free tier: the database suspends when idle, so the
+first request after a pause waits for it to wake, and roughly 350 MB of storage
+is in use — check the current limit before ingesting, and tighten
+`IGDB_GAME_FILTER` if it doesn't fit.
 
 ## Notes on the data
 

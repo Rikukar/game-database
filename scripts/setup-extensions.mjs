@@ -13,12 +13,15 @@ config({ path: '.env' })
 
 const EXTENSIONS = ['pg_trgm', 'btree_gin']
 
-if (!process.env.DATABASE_URL) {
+// CREATE EXTENSION wants the direct endpoint, same as migrations.
+const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
+
+if (!url) {
   console.error('DATABASE_URL is not set — copy .env.example to .env.local')
   process.exit(1)
 }
 
-const sql = postgres(process.env.DATABASE_URL, { max: 1 })
+const sql = postgres(url, { max: 1 })
 
 try {
   for (const extension of EXTENSIONS) {
