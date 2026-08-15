@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:setup": "npm run db:extensions && npm run db:migrate",
-    "ingest": "tsx src/ingest/run.ts"
+    "ingest": "tsx src/ingest/run.ts",
+    "similarity": "tsx src/ingest/similarity.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

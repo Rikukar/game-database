@@ -107,7 +107,9 @@ export default async function Page({
             <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
               {results.map((game) => (
                 <li key={game.id}>
-                  <GameCard game={game} />
+                  <Link href={`/game/${game.slug}`}>
+                    <GameCard game={game} />
+                  </Link>
                 </li>
               ))}
             </ul>

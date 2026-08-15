@@ -2,6 +2,8 @@
 
 A game discovery app built on PostgreSQL. Data comes from the IGDB API.
 
+**Live:** https://game-database-gold.vercel.app
+
 Work in progress — the schema and migrations are done, the ingest and UI are next.
 
 ## Stack
@@ -32,6 +34,7 @@ npm run dev
 | `npm run db:setup` | Create extensions, then migrate |
 | `npm run db:studio` | Browse the database in Drizzle Studio |
 | `npm run ingest` | Pull data from IGDB |
+| `npm run similarity` | Rebuild the "similar games" table (~30s) |
 
 ## Ingest
 
@@ -92,6 +95,25 @@ the interesting one.
 Browse only shows released base games ordered by a Bayesian weighted rating, so
 a 100/100 from five votes doesn't outrank a 94 from five thousand. Search covers
 everything, with a badge on anything that isn't a plain released game.
+
+## Similar games
+
+`npm run similarity` precomputes the recommendations. It can't be a plain
+self-join over shared tags: that generates n² pairs per tag, and the tags are
+skewed enough to make it unrunnable — the genre "Adventure" alone covers 19,699
+games, or 388 million pairs, with all genres together reaching 1.17 billion.
+
+So candidate pairs come only from keywords used by 500 games or fewer, which
+cuts 149 million pairs to 35 million and improves quality at the same time:
+"digital distribution" and "steam achievements" describe a storefront, while
+"time-loop" and "immersive-sim" describe a game. Genres then score the
+candidates rather than generating them.
+
+Scores are a smoothed cosine similarity. Plain cosine rewards having *few*
+tags — an obscure game matching one keyword out of one beat Half-Life 2 matching
+six out of eighty-four, which is how Portal 2's top recommendation became
+"Arkista's Ring". Adding a constant to both tag counts fixes it. The whole
+rebuild takes about 30 seconds and reads back as a 0.14ms index scan.
 
 ## Layout
 
