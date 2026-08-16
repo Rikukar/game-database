@@ -55,6 +55,76 @@ about 46,000 of IGDB's 372,000 entries, which skips the coverless stubs without
 losing anything people search for. Override with `IGDB_GAME_FILTER` in
 `.env.local`; `cover != null` alone gives roughly 313,000.
 
+## Performance
+
+Every figure below comes from `npm run benchmark`, measured against the
+production Neon database — 46,293 games, 298,282 keyword links, 144,383 release
+dates. Each case is the median of five runs, reporting server-side execution
+time from `EXPLAIN ANALYZE` rather than wall clock, so network latency isn't
+being passed off as query cost.
+
+The "sequential scan" rows disable index scans for that statement only, which
+is a fair stand-in for not having built the index.
+
+Running the same suite against local Docker gives roughly 2× better absolute
+numbers on faster hardware, but the same ratios and the same plans — the
+conclusions aren't an artefact of one environment.
+
+**Full-text search** — all matches for `bloodborne`, ranked
+
+| Approach | Median |
+|---|---:|
+| GIN index on the `tsvector` column | **0.09 ms** |
+| sequential scan | 163.07 ms |
+
+**Typo-tolerant title match** — `resident evl`
+
+| Approach | Median |
+|---|---:|
+| GIN trigram index, `word_similarity` | **1.25 ms** |
+| sequential scan | 187.18 ms |
+
+**Faceted filter** — two genres and a platform. This is the denormalisation
+argument: `genre_ids`/`platform_ids` duplicate the junction tables so the filter
+is one GIN containment check rather than joins plus `GROUP BY … HAVING`.
+
+| Approach | Median |
+|---|---:|
+| denormalised arrays, GIN | **0.29 ms** |
+| normalised junctions, `GROUP BY … HAVING` | 3.54 ms |
+
+**Browse page** — 24 rows plus a total count. The obvious single query costs
+nearly 900× the row fetch, because `count(*) OVER ()` has to read every matching
+row and so throws away the ordered index scan.
+
+| Approach | Median |
+|---|---:|
+| two queries: rows off `games_browse_idx` | **0.09 ms** |
+| two queries: separate `count(*)` | 6.34 ms |
+| one query: `count(*) OVER ()` | 79.85 ms |
+
+**Junction reverse lookup** — games in a genre. A composite primary key on
+`(game_id, genre_id)` answers "genres of this game" and nothing else, which is
+why every junction table carries an explicit index in the opposite order.
+
+| Approach | Median |
+|---|---:|
+| reverse index `(genre_id, game_id)` | **0.04 ms** |
+| no usable index | 4.86 ms |
+
+**Similar games** — top 12 from the precomputed table: **0.09 ms**, an index
+scan on `game_similarity_top_idx`. Computing it on demand isn't on the table;
+see [Similar games](#similar-games) for why the naive query doesn't finish.
+
+### What isn't fast
+
+Deep pagination. Page 1 is 0.09 ms; page 500 is **71.86 ms**, and the plan
+switches from an index scan to a sequential scan because `OFFSET 11976` makes
+Postgres walk and discard every preceding row. Nobody browses to page 500, so
+it isn't worth fixing yet — but the fix is keyset pagination, ordering by
+`(weighted_rating, id)` and carrying the last row forward instead of an offset.
+That's the same technique the IGDB ingest already uses, and for the same reason.
+
 ## Deploying
 
 Neon for the database, Vercel for the app.
