@@ -55,6 +55,28 @@ about 46,000 of IGDB's 372,000 entries, which skips the coverless stubs without
 losing anything people search for. Override with `IGDB_GAME_FILTER` in
 `.env.local`; `cover != null` alone gives roughly 313,000.
 
+## Accounts and libraries
+
+GitHub OAuth via Auth.js, with JWT sessions and **no database adapter**. The
+adapter would add `accounts`, `sessions` and `verification_token` tables, but
+`users.external_id` already exists to hold an OAuth subject and
+`library_entries` keys off our own `users.id` — so one upsert on
+`provider:accountId` does the same job without three tables nothing queries.
+
+Signed in, each game page gains a status control (wishlist, backlog, playing,
+completed, dropped) and a 1–10 rating. `library_entries` has a composite primary
+key on `(user_id, game_id)`, which makes every write an upsert with no window
+for a duplicate, and `library_user_status_idx` on
+`(user_id, status, updated_at DESC)` serves the library page with no sort step.
+
+**Nothing is behind a login.** Browse, search and game pages work signed out;
+the library controls simply appear when you're signed in. A demo that opens with
+a sign-in wall is a demo nobody looks at.
+
+The trade-off worth naming: JWT sessions can't be revoked server-side before
+they expire. For a backlog tracker that's the right side of the trade — for
+anything with real consequences it wouldn't be.
+
 ## Performance
 
 Every figure below comes from `npm run benchmark`, measured against the

@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { GameCard } from '@/app/_components/game-card'
+import { LibraryControl } from '@/app/_components/library-control'
+import { currentUserId } from '@/auth'
+import { getLibraryEntry } from '@/lib/library'
 import {
   formatReleaseDate,
   getCredits,
@@ -88,13 +91,16 @@ export default async function GamePage({
 
   // Everything below depends only on the id, so it goes out in one batch
   // rather than five sequential round trips.
-  const [tags, credits, releases, editions, similar] = await Promise.all([
-    getTags(game.id),
-    getCredits(game.id),
-    getReleases(game.id),
-    getEditions(game.id),
-    getSimilar(game.id),
-  ])
+  const [tags, credits, releases, editions, similar, userId, libraryEntry] =
+    await Promise.all([
+      getTags(game.id),
+      getCredits(game.id),
+      getReleases(game.id),
+      getEditions(game.id),
+      getSimilar(game.id),
+      currentUserId(),
+      getLibraryEntry(game.id),
+    ])
 
   const year = game.firstReleaseDate?.slice(0, 4) ?? 'TBA'
   const rating = game.totalRating === null ? null : Math.round(game.totalRating)
@@ -181,6 +187,12 @@ export default async function GamePage({
               )}
             </div>
           )}
+
+          <LibraryControl
+            gameId={game.id}
+            entry={libraryEntry}
+            signedIn={userId !== null}
+          />
 
           {game.summary && (
             <p className="mt-5 max-w-prose text-sm leading-relaxed opacity-80">
